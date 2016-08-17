@@ -173,12 +173,164 @@ describe provider_class do
     end
     context 'is being destroyed' do
       before :each do
+        stub_request(:get, 'http://localhost:7003/go-publisher-workflow/api/jobs')
+          .with(:headers => { 'Accept' => 'application/json' })
+          .to_return(:status => 200, :body => '{"PublishJobs":{"publishJob":[{"href":"http://localhost:7003/go-publisher-workflow/api/jobs/5"}]}}')
+        stub_request(:get, 'http://localhost:7003/go-publisher-workflow/api/jobs/5')
+          .with(:headers => { 'Accept' => 'application/json' })
+          .to_return(:status => 200, :body => '{
+            "PublishJob":{
+              "jobName":"TestJob05",
+              "status":{"value":"NEW"},
+              "product":{"ref":"TestProduct5"},
+              "compressFiles":false,
+              "generateArchive":true,
+              "downloadEmptyFiles":true
+            }}')
+        stub_request(:delete, 'http://localhost:7003/go-publisher-workflow/api/jobs/5')
+          .to_return(:status => 200)
         stub_request(:delete, 'http://localhost:7003/go-publisher-workflow-product-admin/products/test')
           .to_return(:status => 200)
       end
       it 'should have @property_hash cleared' do
         provider.destroy
         expect(provider.instance_variable_get('@property_hash')).to be_empty
+      end
+    end
+    context 'deletes all product jobs associated with a product' do
+      it 'should have a delete_all_product_jobs method' do
+        expect(provider).to respond_to :delete_all_product_jobs
+      end
+      before :each do
+        stub_request(:get, 'http://localhost:7003/go-publisher-workflow/api/jobs')
+          .with(:headers => { 'Accept' => 'application/json' })
+          .to_return(:status => 200, :body => '{"PublishJobs":{"publishJob":[{"href":"http://localhost:7003/go-publisher-workflow/api/jobs/1"}]}}')
+        stub_request(:delete, 'http://localhost:7003/go-publisher-workflow/api/jobs/1')
+          .to_return(:status => 200)
+        stub_request(:get, 'http://localhost:7003/go-publisher-workflow/api/jobs/1')
+          .with(:headers => { 'Accept' => 'application/json' })
+          .to_return(:status => 200, :body => '{
+            "PublishJob":{
+              "jobName":"TestJob01",
+              "status":{"value":"NEW"},
+              "product":{"ref":"TestProduct"},
+              "compressFiles":false,
+              "generateArchive":true,
+              "downloadEmptyFiles":true
+            }}')
+        resource[:name] = 'TestProduct'
+      end
+      it "should have 'delete_job' method" do
+        expect(provider).to respond_to :delete_job
+      end
+      it 'should delete all product jobs' do
+        provider.expects(:delete_job).once
+        provider.delete_all_product_jobs
+      end
+    end
+    context 'job url not associated with a product' do
+      before :each do
+        stub_request(:get, 'http://localhost:7003/go-publisher-workflow/api/jobs')
+          .with(:headers => { 'Accept' => 'application/json' })
+          .to_return(:status => 200, :body => '{"PublishJobs":{"publishJob":[{"href":"http://localhost:7003/go-publisher-workflow/api/jobs/1"}]}}')
+        stub_request(:get, 'http://localhost:7003/go-publisher-workflow/api/jobs/1')
+          .with(:headers => { 'Accept' => 'application/json' })
+          .to_return(:status => 200, :body => '{
+            "PublishJob":{
+              "jobName":"TestJob01",
+              "status":{"value":"NEW"},
+              "product":{"ref":"TestProduct"},
+              "compressFiles":false,
+              "generateArchive":true,
+              "downloadEmptyFiles":true
+            }}')
+        resource[:name] = 'NotTestProduct'
+      end
+      it 'the job should not deleted when deleting the product' do
+        provider.expects(:delete_job).never
+        provider.delete_all_product_jobs
+      end
+    end
+    context 'product is associated with job' do
+      before :each do
+        stub_request(:get, 'http://localhost:7003/go-publisher-workflow/api/jobs/1')
+          .with(:headers => { 'Accept' => 'application/json' })
+          .to_return(:status => 200, :body => '{
+            "PublishJob":{
+              "jobName":"TestJob01",
+              "status":{"value":"NEW"},
+              "product":{"ref":"TestProduct"},
+              "compressFiles":false,
+              "generateArchive":true,
+              "downloadEmptyFiles":true
+            }}')
+      end
+      it "'product_associated_with_job' method should return the job name given the url" do
+        expect(provider.product_associated_with_job('http://localhost:7003/go-publisher-workflow/api/jobs/1')).to eq('TestProduct')
+      end
+    end
+    context 'has no jobs' do
+      before :each do
+        stub_request(:get, 'http://localhost:7003/go-publisher-workflow/api/jobs')
+          .with(:headers => { 'Accept' => 'application/json' })
+          .to_return(:status => 200, :body => '{"PublishJobs":{"publishJob":[]}}')
+      end
+      it 'should have an all_jobs_urls method' do
+        expect(provider).to respond_to :all_job_urls
+      end
+      it 'should return no job urls' do
+        provider.all_job_urls
+        expect(provider.all_job_urls.length).to eq(0)
+      end
+    end
+    context 'has 1 job' do
+      before :each do
+        stub_request(:get, 'http://localhost:7003/go-publisher-workflow/api/jobs')
+          .with(:headers => { 'Accept' => 'application/json' })
+          .to_return(:status => 200, :body => '{"PublishJobs":{"publishJob":[{"href":"http://localhost:7003/go-publisher-workflow/api/jobs/1"}]}}')
+        stub_request(:get, 'http://localhost:7003/go-publisher-workflow/api/jobs/1')
+          .with(:headers => { 'Accept' => 'application/json' })
+          .to_return(:status => 200, :body => '{
+            "PublishJob":{
+              "jobName":"TestJob01",
+              "status":{"value":"NEW"},
+              "product":{"ref":"TestProduct"},
+              "compressFiles":false,
+              "generateArchive":true,
+              "downloadEmptyFiles":true
+            }}')
+      end
+      it 'should return 1 job count' do
+        expect(provider.all_job_urls.length).to eq(1)
+      end
+      it 'should return job url' do
+        expect(provider.all_job_urls).to eq(['http://localhost:7003/go-publisher-workflow/api/jobs/1'])
+      end
+    end
+    context "is deleting job '1'" do
+      before :each do
+        stub_request(:delete, 'http://localhost:7003/go-publisher-workflow/api/jobs/1')
+          .to_return(:status => 200)
+        resource[:name] = 'test'
+      end
+      it "should have 'delete_job' method" do
+        expect(provider).to respond_to :delete_job
+      end
+      it "should delete job '1'" do
+        provider.delete_job('http://localhost:7003/go-publisher-workflow/api/jobs/1')
+      end
+    end
+    context "is deleting product 'test'" do
+      before :each do
+        stub_request(:delete, 'http://localhost:7003/go-publisher-workflow-product-admin/products/test')
+          .to_return(:status => 200)
+        resource[:name] = 'test'
+      end
+      it "should have 'delete_product' method" do
+        expect(provider).to respond_to :delete_product
+      end
+      it "should delete product 'test'" do
+        provider.delete_product
       end
     end
   end
